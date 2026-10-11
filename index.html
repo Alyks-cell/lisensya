@@ -48,6 +48,7 @@
     }
 
     body.locked { overflow: hidden; height: 100vh; }
+    @media (max-width: 600px) { body.revealed .bubbles { display: none; } }
 
     /* ---------- Floating bubbles (pool day) ---------- */
     .bubbles {
@@ -1069,6 +1070,67 @@
     }
 
     @media print { .music { display: none !important; } }
+
+    /* =========================================================
+       Performance (smoother on phones)
+       ========================================================= */
+
+    /* Fixed gradient as its own layer instead of background-attachment: fixed */
+    body { background: var(--bg-top); }
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      z-index: -1;
+      background: linear-gradient(180deg, var(--bg-top), var(--bg-bottom));
+      pointer-events: none;
+    }
+
+    /* Grain without blend mode (blend forced a full repaint on every scroll frame) */
+    body::after { mix-blend-mode: normal; opacity: .035; }
+
+    /* Animated things get their own GPU layer */
+    .bubbles span,
+    .envelope,
+    .flap,
+    .peek,
+    .seal { will-change: transform; }
+    .bubbles { contain: strict; }
+
+    /* Drop shadow on the floating envelope: cheap box-shadow instead of a re-rasterized filter */
+    .envelope-wrap { filter: none; }
+    .env-back { box-shadow: inset 0 0 0 4px var(--env-back), 0 18px 30px -8px rgba(60,40,20,.28); }
+    .flap::before { filter: none; }
+
+    /* Letter entrance: only opacity + translate (no scale/rotate of a tall element) */
+    .paper { transform: translate3d(0, 60px, 0); }
+    body.revealed .paper { transform: none; }
+    .intro.hide { transform: none; }
+
+    /* Progress bar uses transform instead of width */
+    .progress {
+      width: 100%;
+      transform: scaleX(0);
+      transform-origin: left;
+      transition: none;
+      will-change: transform;
+    }
+
+    .rubber { mix-blend-mode: normal; }
+
+    /* Below the fold, skip rendering until needed */
+    .approve { content-visibility: auto; contain-intrinsic-size: auto 260px; }
+
+    @media (max-width: 600px), (hover: none) {
+      .replay, .music { backdrop-filter: none; -webkit-backdrop-filter: none; }
+      .music { background: rgba(253,251,246,.97); }
+      .replay { background: var(--paper); }
+      .stamp { filter: none; }
+      .paper {
+        box-shadow: 0 1px 3px rgba(0,0,0,.06), 0 10px 30px rgba(60,40,20,.08);
+      }
+      body::after { display: none; }
+    }
   </style>
 </head>
 <body class="locked">
@@ -1078,7 +1140,7 @@
   <div class="bubbles" aria-hidden="true"></div>
 
   <!-- Background music: put a single-instrument version (e.g. piano) in this folder named music.mp3 -->
-  <audio id="bgm" src="music.mp3" loop preload="auto"></audio>
+  <audio id="bgm" src="music.mp3" loop preload="metadata"></audio>
   <button class="music" id="musicBtn" aria-label="Pause music">
     <span class="disc" aria-hidden="true"></span>
     <span class="track"><b>Please Please Please</b><small>instrumental</small></span>
@@ -1249,8 +1311,9 @@
 
       // Bubbles
       var bubbleBox = document.querySelector('.bubbles');
+      var small = window.matchMedia('(max-width: 600px)').matches;
       if (!reduced) {
-        for (var i = 0; i < 18; i++) {
+        for (var i = 0; i < (small ? 8 : 16); i++) {
           var b = document.createElement('span');
           var size = 6 + Math.random() * 22;
           var dur = 10 + Math.random() * 10;
@@ -1329,9 +1392,16 @@
 
       // Reading progress
       var bar = document.querySelector('.progress');
+      var ticking = false;
       window.addEventListener('scroll', function () {
-        var max = document.documentElement.scrollHeight - window.innerHeight;
-        bar.style.width = (max > 0 && body.classList.contains('revealed') ? (window.scrollY / max) * 100 : 0) + '%';
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(function () {
+          var max = document.documentElement.scrollHeight - window.innerHeight;
+          var pct = max > 0 && body.classList.contains('revealed') ? window.scrollY / max : 0;
+          bar.style.transform = 'scaleX(' + pct + ')';
+          ticking = false;
+        });
       }, { passive: true });
 
       // Approval
@@ -1419,7 +1489,7 @@
         bgm.volume = 0;
         var pr = bgm.play();
         if (pr && pr.then) {
-          pr.then(function () { musicBtn.classList.add('playing'); musicBtn.setAttribute('aria-label', 'Pause music'); fadeTo(0.6); })
+          pr.then(function () { musicBtn.classList.add('ready', 'playing'); musicBtn.setAttribute('aria-label', 'Pause music'); fadeTo(0.6); })
             .catch(function () {});
         }
       }

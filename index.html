@@ -999,6 +999,76 @@
     }
     .contact-actions a:hover { background: var(--pen); color: #fff; border-color: var(--pen); }
     .contact-actions svg { width: 16px; height: 16px; }
+
+    /* ---------- Music toggle ---------- */
+    .music {
+      position: fixed;
+      right: 16px;
+      bottom: 16px;
+      z-index: 40;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 14px 6px 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: rgba(253,251,246,.85);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      box-shadow: 0 6px 20px rgba(60,40,20,.12);
+      font: inherit;
+      color: var(--ink);
+      cursor: pointer;
+      opacity: 0;
+      transform: translateY(20px);
+      pointer-events: none;
+      transition: opacity .6s ease, transform .6s ease;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body.revealed .music.ready { opacity: 1; transform: none; pointer-events: auto; }
+
+    .disc {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, var(--seal) 0 5px, #f6dada 5px 6px, transparent 6px),
+        repeating-radial-gradient(circle, #2a2622 0 2px, #3a342f 2px 3px);
+      animation: spin 4s linear infinite;
+      animation-play-state: paused;
+      flex: none;
+    }
+    .music.playing .disc { animation-play-state: running; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .music .track { text-align: left; line-height: 1.25; }
+    .music .track b { display: block; font-size: 13px; font-weight: 600; }
+    .music .track small { font-size: 11px; color: var(--muted); letter-spacing: .04em; }
+
+    .bars { display: flex; align-items: flex-end; gap: 2px; height: 14px; margin-left: 2px; }
+    .bars i {
+      width: 3px;
+      height: 4px;
+      background: var(--pen);
+      border-radius: 1px;
+      animation: eq .9s ease-in-out infinite;
+      animation-play-state: paused;
+    }
+    .bars i:nth-child(2) { animation-delay: .2s; }
+    .bars i:nth-child(3) { animation-delay: .4s; }
+    .music.playing .bars i { animation-play-state: running; }
+    .music:not(.playing) .bars i { height: 4px; }
+
+    @keyframes eq { 0%,100% { height: 4px; } 50% { height: 14px; } }
+
+    @media (max-width: 600px) {
+      .music { right: 12px; bottom: 12px; }
+      .music .track small { display: none; }
+    }
+
+    @media print { .music { display: none !important; } }
   </style>
 </head>
 <body class="locked">
@@ -1006,6 +1076,14 @@
   <div class="progress" aria-hidden="true"></div>
 
   <div class="bubbles" aria-hidden="true"></div>
+
+  <!-- Background music: put a single-instrument version (e.g. piano) in this folder named music.mp3 -->
+  <audio id="bgm" src="music.mp3" loop preload="auto"></audio>
+  <button class="music" id="musicBtn" aria-label="Pause music">
+    <span class="disc" aria-hidden="true"></span>
+    <span class="track"><b>Please Please Please</b><small>instrumental</small></span>
+    <span class="bars" aria-hidden="true"><i></i><i></i><i></i></span>
+  </button>
 
   <!-- Envelope screen -->
   <section class="intro" id="intro">
@@ -1313,6 +1391,50 @@
         rubberBottom.textContent = 'APPROVAL';
         rubber.classList.remove('approved', 'stamp-again');
       });
+
+      // Music (starts when the envelope is opened)
+      var bgm = document.getElementById('bgm');
+      var musicBtn = document.getElementById('musicBtn');
+      var fadeTimer;
+
+      bgm.addEventListener('canplay', function () { musicBtn.classList.add('ready'); });
+      bgm.addEventListener('error', function () { musicBtn.remove(); });
+      if (bgm.error) musicBtn.remove(); else if (bgm.readyState >= 3) musicBtn.classList.add('ready');
+
+      function fadeTo(target, done) {
+        clearInterval(fadeTimer);
+        fadeTimer = setInterval(function () {
+          var v = bgm.volume + (target > bgm.volume ? 0.04 : -0.06);
+          if ((target > bgm.volume && v >= target) || (target <= bgm.volume && v <= target)) {
+            bgm.volume = Math.max(0, Math.min(1, target));
+            clearInterval(fadeTimer);
+            if (done) done();
+          } else {
+            bgm.volume = Math.max(0, Math.min(1, v));
+          }
+        }, 80);
+      }
+
+      function playMusic() {
+        bgm.volume = 0;
+        var pr = bgm.play();
+        if (pr && pr.then) {
+          pr.then(function () { musicBtn.classList.add('playing'); musicBtn.setAttribute('aria-label', 'Pause music'); fadeTo(0.6); })
+            .catch(function () {});
+        }
+      }
+
+      function pauseMusic() {
+        musicBtn.classList.remove('playing');
+        musicBtn.setAttribute('aria-label', 'Play music');
+        fadeTo(0, function () { bgm.pause(); });
+      }
+
+      musicBtn.addEventListener('click', function () {
+        if (bgm.paused || !musicBtn.classList.contains('playing')) playMusic(); else pauseMusic();
+      });
+
+      env.addEventListener('click', function () { if (bgm.paused) playMusic(); });
 
       env.addEventListener('click', open);
       replay.addEventListener('click', reset);
